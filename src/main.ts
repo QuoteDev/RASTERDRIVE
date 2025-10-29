@@ -3,12 +3,14 @@
 import { PixelCamera } from './render/PixelCamera';
 import { GameEngine } from './core/GameEngine';
 import { WellRenderer } from './render/WellRenderer';
+import { QueueHoldRenderer } from './render/QueueHoldRenderer';
 import { HUD } from './ui/HUD';
 
 class Game {
   private camera: PixelCamera;
   private engine: GameEngine;
   private wellRenderer: WellRenderer;
+  private queueHoldRenderer: QueueHoldRenderer;
   private hud: HUD;
 
   private lastTime: number = 0;
@@ -28,10 +30,12 @@ class Game {
 
     // Create renderers
     this.wellRenderer = new WellRenderer(10, 20);
+    this.queueHoldRenderer = new QueueHoldRenderer();
     this.hud = new HUD();
 
     // Add to stage
     this.camera.stage.addChild(this.wellRenderer.getContainer());
+    this.camera.stage.addChild(this.queueHoldRenderer.getContainer());
     this.camera.stage.addChild(this.hud.getContainer());
 
     // Listen to game events
@@ -81,6 +85,9 @@ class Game {
     // Render well and pieces
     this.wellRenderer.render(state.board, state.currentPiece);
 
+    // Render queue and hold
+    this.queueHoldRenderer.render(state.queue, state.held);
+
     // Update HUD
     this.hud.update(state);
 
@@ -92,6 +99,7 @@ class Game {
     this.running = false;
     this.engine.destroy();
     this.wellRenderer.destroy();
+    this.queueHoldRenderer.destroy();
     this.hud.destroy();
     this.camera.destroy();
   }
