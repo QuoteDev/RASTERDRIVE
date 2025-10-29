@@ -135,8 +135,15 @@ export class HUD {
     BitmapFont.drawText(this.graphics, 'BREAKDOWN', rightX, y, 0x9bb7ff);
     y += 10;
 
-    // Format: "BASE 0 × X ×1.0"
-    const breakdownText = `BASE 0 × X ×${state.rev.toFixed(1)}`;
+    // Format: "BASE 800 × ×2.5 (+CARRY 150)"
+    let breakdownText = '---';
+    if (state.lastScoringResult) {
+      const r = state.lastScoringResult;
+      breakdownText = `BASE ${r.base} × ×${r.xValue.toFixed(1)}`;
+      if (r.carryAdd > 0) {
+        breakdownText += ` (+${r.carryAdd})`;
+      }
+    }
     BitmapFont.drawText(
       this.graphics,
       breakdownText,

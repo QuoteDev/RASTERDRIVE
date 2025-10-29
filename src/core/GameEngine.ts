@@ -20,12 +20,14 @@ export class GameEngine {
   private eventCallbacks: EventCallback[] = [];
 
   // Gravity
-  private gravity: number = 1.0; // cells per second
+  private gravity: number = 20.0; // cells per second (nice modern speed)
   private gravityTimer: number = 0;
 
   // Lock delay
   private lockDelay: number = 0.5; // seconds
   private lockTimer: number = 0;
+  private lockMoves: number = 0; // Track moves for infinite lock
+  private maxLockMoves: number = 15; // Maximum moves before forcing lock
   private isOnGround: boolean = false;
 
   constructor(seed: number) {
@@ -49,6 +51,7 @@ export class GameEngine {
       rev: 1.0,
       lastOutcomes: [],
       echoQueue: 0,
+      lastScoringResult: null,
       credits: 0,
       modules: [],
       ownedVariants: this.generator.getVariants() as any,
@@ -242,7 +245,11 @@ export class GameEngine {
   }
 
   private resetLockTimer(): void {
-    this.lockTimer = 0;
+    // Infinite lock delay - reset timer on movement/rotation
+    if (this.lockMoves < this.maxLockMoves) {
+      this.lockTimer = 0;
+      this.lockMoves++;
+    }
   }
 
   private lockPiece(): void {
@@ -276,12 +283,11 @@ export class GameEngine {
   private handleLineClear(lines: number[]): void {
     const linesCleared = lines.length;
     const cells = this.well.getLineCells(lines).flat();
-    const isPerfectClear = this.well.isEmpty();
 
-    // Calculate scoring
+    // Calculate scoring (Echo queue consumed here for this clear)
     const scoringContext = {
       linesCleared,
-      isPerfectClear,
+      isPerfectClear: false, // Will check after clearing
       cells,
       modules: this.state.modules,
       sealCount: this.state.sealCount,
@@ -291,12 +297,10 @@ export class GameEngine {
 
     const result = this.scoring.compute(scoringContext);
 
-    // Update state
-    this.state.total += result.delta;
-    this.state.credits += result.creditsGained;
-    this.state.locksSinceLastClear = 0;
+    // Consume echo queue AFTER using it in scoring
+    this.echoQueue.consume();
 
-    // Handle Echo
+    // Handle Echo - queue contributions for NEXT clear
     const echoCount = cells.filter((c) => c.badge === 'Echo').length;
     if (echoCount > 0) {
       const contribution = this.scoring.getEchoContribution(
@@ -305,13 +309,23 @@ export class GameEngine {
       );
       this.echoQueue.add(contribution);
     }
-    this.echoQueue.consume(); // Consume queue after adding
+
+    // Update state
+    this.state.total += result.delta;
+    this.state.credits += result.creditsGained;
+    this.state.locksSinceLastClear = 0;
+    this.state.echoQueue = this.echoQueue.peek(); // Sync to state
+    this.state.lastScoringResult = result; // Save for HUD display
 
     // Handle Seals (permanent economy boost)
     const sealCount = cells.filter((c) => c.badge === 'Seal').length;
     if (sealCount > 0) {
       this.state.sealCount += sealCount;
     }
+
+    // Clear lines first, then check perfect clear
+    this.well.clearLines(lines);
+    const isPerfectClear = this.well.isEmpty();
 
     // Update Rev
     const isPrime = this.scoring.isPrime(linesCleared, isPerfectClear);
@@ -323,9 +337,6 @@ export class GameEngine {
       this.addOutcome('minor');
     }
     this.state.rev = this.revTracker.getRev();
-
-    // Clear lines
-    this.well.clearLines(lines);
 
     // Emit events
     this.emit({ type: 'line_clear', lines: linesCleared });
@@ -367,6 +378,7 @@ export class GameEngine {
     this.state.currentPiece = this.state.queue.shift()!;
     this.gravityTimer = 0;
     this.lockTimer = 0;
+    this.lockMoves = 0; // Reset lock moves for new piece
     this.isOnGround = false;
 
     // Check game over

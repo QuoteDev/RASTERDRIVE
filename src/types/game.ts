@@ -81,6 +81,7 @@ export interface GameState {
   rev: number;
   lastOutcomes: Outcome[];
   echoQueue: number;
+  lastScoringResult: ScoringResult | null;
 
   // Economy
   credits: number;
