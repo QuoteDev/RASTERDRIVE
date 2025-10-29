@@ -1,6 +1,7 @@
 // Scoring system - Base, Rev, X multiplier, Carry (Echo), Cache/Seal economy
 
 import { ScoringContext, ScoringResult } from '@/types/game';
+import { ModulesEngine, ModuleContext } from './modules';
 
 // Base scoring table
 const BASE_SCORES: Record<number, number> = {
