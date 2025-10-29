@@ -1,16 +1,18 @@
-// Well renderer - renders the game board and pieces
+// Well renderer - Pixel art rendering for the game board and pieces
 
 import * as PIXI from 'pixi.js';
 import { Board, Piece } from '@/types/game';
 import { getPieceShape, SHAPE_COLORS } from '@/core/SRS';
 import { snap } from '@/utils/math';
+import { PixelUI } from './PixelUI';
 
 const CELL_SIZE = 8;
 const WELL_PADDING = 2;
 
 export class WellRenderer {
   private container: PIXI.Container;
-  private cellGraphics: PIXI.Graphics[][];
+  private bgGraphics: PIXI.Graphics;
+  private cellGraphics: PIXI.Graphics;
   private pieceGraphics: PIXI.Graphics;
   private boardWidth: number;
   private boardHeight: number;
@@ -20,21 +22,13 @@ export class WellRenderer {
     this.boardWidth = boardWidth;
     this.boardHeight = boardHeight;
 
-    // Create cell graphics grid
-    this.cellGraphics = [];
-    for (let y = 0; y < boardHeight; y++) {
-      this.cellGraphics[y] = [];
-      for (let x = 0; x < boardWidth; x++) {
-        const cell = new PIXI.Graphics();
-        cell.x = snap(WELL_PADDING + x * CELL_SIZE);
-        cell.y = snap(WELL_PADDING + y * CELL_SIZE);
-        this.cellGraphics[y][x] = cell;
-        this.container.addChild(cell);
-      }
-    }
-
-    // Create piece graphics
+    // Create layers
+    this.bgGraphics = new PIXI.Graphics();
+    this.cellGraphics = new PIXI.Graphics();
     this.pieceGraphics = new PIXI.Graphics();
+
+    this.container.addChild(this.bgGraphics);
+    this.container.addChild(this.cellGraphics);
     this.container.addChild(this.pieceGraphics);
 
     // Draw well background
@@ -46,89 +40,130 @@ export class WellRenderer {
   }
 
   private drawWellBackground(): void {
-    const bg = new PIXI.Graphics();
+    this.bgGraphics.clear();
 
-    // Outer border filled rectangle
-    bg.beginFill(0x121820);
-    bg.drawRect(
+    const wellWidth = this.boardWidth * CELL_SIZE + WELL_PADDING * 2;
+    const wellHeight = this.boardHeight * CELL_SIZE + WELL_PADDING * 2;
+
+    // Outer frame (2px thick)
+    PixelUI.drawFrame(
+      this.bgGraphics,
       0,
       0,
-      this.boardWidth * CELL_SIZE + WELL_PADDING * 2,
-      this.boardHeight * CELL_SIZE + WELL_PADDING * 2
-    );
-    bg.endFill();
-
-    // Inner keyline
-    bg.lineStyle(1, 0x243042);
-    bg.drawRect(
-      1,
-      1,
-      this.boardWidth * CELL_SIZE + WELL_PADDING * 2 - 2,
-      this.boardHeight * CELL_SIZE + WELL_PADDING * 2 - 2
+      wellWidth,
+      wellHeight,
+      0x0f1317, // graphite inner
+      0x2a323a, // slate outer
+      0x161a1e  // iron middle
     );
 
-    this.container.addChildAt(bg, 0);
+    // Draw subtle grid lines
+    this.bgGraphics.beginFill(0x161a1e, 0.3);
+    for (let x = 1; x < this.boardWidth; x++) {
+      const px = WELL_PADDING + x * CELL_SIZE;
+      this.bgGraphics.drawRect(snap(px), WELL_PADDING, 1, this.boardHeight * CELL_SIZE);
+    }
+    for (let y = 1; y < this.boardHeight; y++) {
+      const py = WELL_PADDING + y * CELL_SIZE;
+      this.bgGraphics.drawRect(WELL_PADDING, snap(py), this.boardWidth * CELL_SIZE, 1);
+    }
+    this.bgGraphics.endFill();
   }
 
   render(board: Board, currentPiece: Piece | null): void {
+    // Clear cell and piece layers
+    this.cellGraphics.clear();
+    this.pieceGraphics.clear();
+
     // Render board cells
     for (let y = 0; y < board.height; y++) {
       for (let x = 0; x < board.width; x++) {
         const cell = board.cells[y][x];
-        const graphics = this.cellGraphics[y][x];
-        graphics.clear();
-
         if (cell.filled) {
-          this.drawCell(graphics, 0, 0, cell.color, cell.badge);
+          const px = WELL_PADDING + x * CELL_SIZE;
+          const py = WELL_PADDING + y * CELL_SIZE;
+          this.drawPixelCell(
+            this.cellGraphics,
+            snap(px),
+            snap(py),
+            cell.color,
+            cell.badge
+          );
         }
       }
     }
 
     // Render current piece
-    this.pieceGraphics.clear();
     if (currentPiece) {
       this.drawPiece(currentPiece);
     }
   }
 
-  private drawCell(
+  private drawPixelCell(
     graphics: PIXI.Graphics,
-    offsetX: number,
-    offsetY: number,
+    x: number,
+    y: number,
     color: string,
     badge: string
   ): void {
-    const x = offsetX;
-    const y = offsetY;
-    const size = CELL_SIZE;
-
-    // Parse color
     const colorNum = parseInt(color.replace('#', ''), 16);
 
-    // Main fill
+    // Main cell fill (6x6 inner)
     graphics.beginFill(colorNum);
-    graphics.drawRect(x, y, size, size);
+    graphics.drawRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
     graphics.endFill();
 
-    // Inner keyline (1px lighter)
-    graphics.lineStyle(1, 0x2a323a);
-    graphics.drawRect(x + 1, y + 1, size - 2, size - 2);
-    graphics.lineStyle(0); // Reset line style
+    // Inner highlight (top-left, 2px)
+    const highlightColor = this.lightenColor(colorNum, 0.2);
+    graphics.beginFill(highlightColor);
+    graphics.drawRect(x + 2, y + 2, CELL_SIZE - 4, 1); // Top edge
+    graphics.drawRect(x + 2, y + 2, 1, CELL_SIZE - 4); // Left edge
+    graphics.endFill();
 
-    // Badge indicator (small dot in corner)
+    // Border/shadow (darker)
+    const shadowColor = this.darkenColor(colorNum, 0.3);
+    graphics.beginFill(shadowColor);
+    graphics.drawRect(x, y, CELL_SIZE, 1); // Top
+    graphics.drawRect(x, y, 1, CELL_SIZE); // Left
+    graphics.drawRect(x, y + CELL_SIZE - 1, CELL_SIZE, 1); // Bottom
+    graphics.drawRect(x + CELL_SIZE - 1, y, 1, CELL_SIZE); // Right
+    graphics.endFill();
+
+    // Badge indicator (pixel art icon in corner)
     if (badge === 'Echo') {
-      graphics.beginFill(0x96f03c);
-      graphics.drawCircle(x + size - 2, y + 2, 1);
-      graphics.endFill();
+      this.drawBadgeIcon(graphics, 'E', x + CELL_SIZE - 3, y + 1, 0x96f03c);
     } else if (badge === 'Cache') {
-      graphics.beginFill(0xffbd2e);
-      graphics.drawCircle(x + size - 2, y + 2, 1);
-      graphics.endFill();
+      this.drawBadgeIcon(graphics, 'C', x + CELL_SIZE - 3, y + 1, 0xffbd2e);
     } else if (badge === 'Seal') {
-      graphics.beginFill(0xff3aa7);
-      graphics.drawCircle(x + size - 2, y + 2, 1);
-      graphics.endFill();
+      this.drawBadgeIcon(graphics, 'S', x + CELL_SIZE - 3, y + 1, 0xff3aa7);
     }
+  }
+
+  private drawBadgeIcon(
+    graphics: PIXI.Graphics,
+    letter: string,
+    x: number,
+    y: number,
+    color: number
+  ): void {
+    // Simple 2x3 letter patterns
+    graphics.beginFill(color);
+
+    if (letter === 'E') {
+      graphics.drawRect(x, y, 2, 1);
+      graphics.drawRect(x, y + 1, 1, 1);
+      graphics.drawRect(x, y + 2, 2, 1);
+    } else if (letter === 'C') {
+      graphics.drawRect(x, y, 2, 1);
+      graphics.drawRect(x, y + 1, 1, 1);
+      graphics.drawRect(x, y + 2, 2, 1);
+    } else if (letter === 'S') {
+      graphics.drawRect(x, y, 2, 1);
+      graphics.drawRect(x + 1, y + 1, 1, 1);
+      graphics.drawRect(x, y + 2, 2, 1);
+    }
+
+    graphics.endFill();
   }
 
   private drawPiece(piece: Piece): void {
@@ -146,12 +181,34 @@ export class WellRenderer {
         if (boardY < 0 || boardY >= this.boardHeight) continue;
         if (boardX < 0 || boardX >= this.boardWidth) continue;
 
-        const pixelX = snap(WELL_PADDING + boardX * CELL_SIZE);
-        const pixelY = snap(WELL_PADDING + boardY * CELL_SIZE);
+        const px = WELL_PADDING + boardX * CELL_SIZE;
+        const py = WELL_PADDING + boardY * CELL_SIZE;
 
-        this.drawCell(this.pieceGraphics, pixelX, pixelY, color, piece.badge);
+        this.drawPixelCell(
+          this.pieceGraphics,
+          snap(px),
+          snap(py),
+          color,
+          piece.badge
+        );
       }
     }
+  }
+
+  // Helper to lighten a color
+  private lightenColor(color: number, amount: number): number {
+    const r = Math.min(255, ((color >> 16) & 0xff) + amount * 255);
+    const g = Math.min(255, ((color >> 8) & 0xff) + amount * 255);
+    const b = Math.min(255, (color & 0xff) + amount * 255);
+    return (r << 16) | (g << 8) | b;
+  }
+
+  // Helper to darken a color
+  private darkenColor(color: number, amount: number): number {
+    const r = Math.max(0, ((color >> 16) & 0xff) * (1 - amount));
+    const g = Math.max(0, ((color >> 8) & 0xff) * (1 - amount));
+    const b = Math.max(0, (color & 0xff) * (1 - amount));
+    return (r << 16) | (g << 8) | b;
   }
 
   getContainer(): PIXI.Container {

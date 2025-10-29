@@ -1,152 +1,223 @@
-// HUD - displays score, target, rev, credits, and breakdown
+// HUD - Pixel art displays for score, target, rev, credits, and breakdown
 
 import * as PIXI from 'pixi.js';
 import { GameState } from '@/types/game';
-import { snap } from '@/utils/math';
+import { BitmapFont } from '@/render/BitmapFont';
+import { PixelUI } from '@/render/PixelUI';
 
 export class HUD {
   private container: PIXI.Container;
+  private graphics: PIXI.Graphics;
 
-  // Text elements
-  private stageTotal: PIXI.Text;
-  private target: PIXI.Text;
-  private breakdown: PIXI.Text;
-  private revDisplay: PIXI.Text;
-  private creditsDisplay: PIXI.Text;
-  private outcomePips: PIXI.Text;
+  // Cached state for only redrawing when changed
+  private lastState: Partial<GameState> = {};
 
   constructor() {
     this.container = new PIXI.Container();
+    this.graphics = new PIXI.Graphics();
+    this.container.addChild(this.graphics);
 
-    // Text style
-    const titleStyle = new PIXI.TextStyle({
-      fontFamily: 'monospace',
-      fontSize: 10,
-      fill: 0x9bb7ff,
-    });
+    // Draw initial static elements
+    this.drawStaticElements();
+  }
 
-    const valueStyle = new PIXI.TextStyle({
-      fontFamily: 'monospace',
-      fontSize: 16,
-      fill: 0xe6f2ff,
-      fontWeight: 'bold',
-    });
+  private drawStaticElements(): void {
+    // Right panel frame (Score pane)
+    const panelX = 275;
+    const panelY = 15;
+    const panelWidth = 100;
+    const panelHeight = 190;
 
-    const largeStyle = new PIXI.TextStyle({
-      fontFamily: 'monospace',
-      fontSize: 24,
-      fill: 0xe6f2ff,
-      fontWeight: 'bold',
-    });
-
-    const breakdownStyle = new PIXI.TextStyle({
-      fontFamily: 'monospace',
-      fontSize: 12,
-      fill: 0xe6f2ff,
-    });
-
-    // Right panel (Score pane)
-    const rightX = 280;
-    let rightY = 20;
-
-    // Stage Total (giant)
-    const totalLabel = new PIXI.Text('STAGE TOTAL', titleStyle);
-    totalLabel.x = snap(rightX);
-    totalLabel.y = snap(rightY);
-    this.container.addChild(totalLabel);
-    rightY += 15;
-
-    this.stageTotal = new PIXI.Text('0', largeStyle);
-    this.stageTotal.x = snap(rightX);
-    this.stageTotal.y = snap(rightY);
-    this.container.addChild(this.stageTotal);
-    rightY += 30;
-
-    // Target
-    const targetLabel = new PIXI.Text('TARGET', titleStyle);
-    targetLabel.x = snap(rightX);
-    targetLabel.y = snap(rightY);
-    this.container.addChild(targetLabel);
-    rightY += 15;
-
-    this.target = new PIXI.Text('5000', valueStyle);
-    this.target.x = snap(rightX);
-    this.target.y = snap(rightY);
-    this.container.addChild(this.target);
-    rightY += 25;
-
-    // Breakdown
-    const breakdownLabel = new PIXI.Text('BREAKDOWN', titleStyle);
-    breakdownLabel.x = snap(rightX);
-    breakdownLabel.y = snap(rightY);
-    this.container.addChild(breakdownLabel);
-    rightY += 15;
-
-    this.breakdown = new PIXI.Text('Base 0 × X ×1.0', breakdownStyle);
-    this.breakdown.x = snap(rightX);
-    this.breakdown.y = snap(rightY);
-    this.container.addChild(this.breakdown);
-    rightY += 20;
-
-    // Rev
-    const revLabel = new PIXI.Text('REV', titleStyle);
-    revLabel.x = snap(rightX);
-    revLabel.y = snap(rightY);
-    this.container.addChild(revLabel);
-    rightY += 15;
-
-    this.revDisplay = new PIXI.Text('x1.0', valueStyle);
-    this.revDisplay.x = snap(rightX);
-    this.revDisplay.y = snap(rightY);
-    this.container.addChild(this.revDisplay);
-    rightY += 20;
-
-    this.outcomePips = new PIXI.Text('• • •', breakdownStyle);
-    this.outcomePips.x = snap(rightX);
-    this.outcomePips.y = snap(rightY);
-    this.container.addChild(this.outcomePips);
-    rightY += 20;
-
-    // Credits
-    const creditsLabel = new PIXI.Text('CREDITS', titleStyle);
-    creditsLabel.x = snap(rightX);
-    creditsLabel.y = snap(rightY);
-    this.container.addChild(creditsLabel);
-    rightY += 15;
-
-    this.creditsDisplay = new PIXI.Text('$ 0', valueStyle);
-    this.creditsDisplay.x = snap(rightX);
-    this.creditsDisplay.y = snap(rightY);
-    this.container.addChild(this.creditsDisplay);
+    PixelUI.drawFrame(
+      this.graphics,
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      0x0f1317, // graphite bg
+      0x2a323a, // slate border
+      0x161a1e  // iron inner
+    );
   }
 
   update(state: GameState): void {
-    // Update stage total
-    this.stageTotal.text = state.total.toString();
-
-    // Update target
-    this.target.text = state.target.toString();
-
-    // Update breakdown (placeholder - will be dynamic with scoring)
-    this.breakdown.text = `Base 0 × X ×${state.rev.toFixed(1)}`;
-
-    // Update Rev
-    this.revDisplay.text = `x${state.rev.toFixed(1)}`;
-
-    // Update outcome pips
-    const pipSymbols = state.lastOutcomes.map((outcome) => {
-      if (outcome === 'prime') return '★';
-      if (outcome === 'miss') return '✖';
-      return '•';
-    });
-    // Pad with dots if less than 3
-    while (pipSymbols.length < 3) {
-      pipSymbols.unshift('•');
+    // Only redraw if state changed
+    if (
+      this.lastState.total === state.total &&
+      this.lastState.target === state.target &&
+      this.lastState.rev === state.rev &&
+      this.lastState.credits === state.credits &&
+      this.lastState.lastOutcomes === state.lastOutcomes
+    ) {
+      return;
     }
-    this.outcomePips.text = pipSymbols.join(' ');
 
-    // Update credits
-    this.creditsDisplay.text = `$ ${state.credits}`;
+    // Clear dynamic content only
+    this.graphics.clear();
+
+    // Redraw static elements
+    this.drawStaticElements();
+
+    // Draw all dynamic content
+    this.drawContent(state);
+
+    // Cache state
+    this.lastState = {
+      total: state.total,
+      target: state.target,
+      rev: state.rev,
+      credits: state.credits,
+      lastOutcomes: [...state.lastOutcomes],
+    };
+  }
+
+  private drawContent(state: GameState): void {
+    const rightX = 280;
+    let y = 20;
+
+    // ========================================
+    // STAGE TOTAL (Giant)
+    // ========================================
+    BitmapFont.drawText(
+      this.graphics,
+      'STAGE TOTAL',
+      rightX,
+      y,
+      0x9bb7ff // paper2
+    );
+    y += 10;
+
+    BitmapFont.drawGiantText(
+      this.graphics,
+      state.total.toString(),
+      rightX,
+      y,
+      0xe6f2ff, // paper
+      0x9bb7ff   // paper2 highlight
+    );
+    y += 28;
+
+    // Separator
+    PixelUI.drawSeparator(this.graphics, rightX, y, 85, 0x243042);
+    y += 6;
+
+    // ========================================
+    // TARGET (with chip background)
+    // ========================================
+    BitmapFont.drawText(this.graphics, 'TARGET', rightX, y, 0x9bb7ff);
+    y += 10;
+
+    // Target chip
+    const targetText = state.target.toString();
+    const targetWidth = BitmapFont.measureText(targetText, 2);
+    PixelUI.drawChip(
+      this.graphics,
+      rightX - 2,
+      y - 2,
+      targetWidth + 6,
+      16,
+      0x161a1e, // iron
+      0x2a323a  // slate border
+    );
+
+    BitmapFont.drawLargeText(
+      this.graphics,
+      targetText,
+      rightX + 1,
+      y,
+      0x00e0ff // cyan accent
+    );
+    y += 20;
+
+    // ========================================
+    // BREAKDOWN
+    // ========================================
+    BitmapFont.drawText(this.graphics, 'BREAKDOWN', rightX, y, 0x9bb7ff);
+    y += 10;
+
+    // Format: "BASE 0 × X ×1.0"
+    const breakdownText = `BASE 0 × X ×${state.rev.toFixed(1)}`;
+    BitmapFont.drawText(
+      this.graphics,
+      breakdownText,
+      rightX,
+      y,
+      0xe6f2ff // paper
+    );
+    y += 12;
+
+    // ========================================
+    // REV
+    // ========================================
+    BitmapFont.drawText(this.graphics, 'REV', rightX, y, 0x9bb7ff);
+    y += 10;
+
+    const revText = `×${state.rev.toFixed(1)}`;
+    BitmapFont.drawLargeText(
+      this.graphics,
+      revText,
+      rightX,
+      y,
+      state.rev >= 2.0 ? 0x96f03c : 0xe6f2ff // lime if high, paper otherwise
+    );
+    y += 18;
+
+    // Outcome pips
+    this.drawOutcomePips(state.lastOutcomes, rightX, y);
+    y += 12;
+
+    // ========================================
+    // CREDITS
+    // ========================================
+    PixelUI.drawSeparator(this.graphics, rightX, y, 85, 0x243042);
+    y += 6;
+
+    BitmapFont.drawText(this.graphics, 'CREDITS', rightX, y, 0x9bb7ff);
+    y += 10;
+
+    const creditsText = `$${state.credits}`;
+    BitmapFont.drawLargeText(
+      this.graphics,
+      creditsText,
+      rightX,
+      y,
+      0xffbd2e // yellow
+    );
+  }
+
+  private drawOutcomePips(
+    outcomes: ('prime' | 'minor' | 'miss')[],
+    x: number,
+    y: number
+  ): void {
+    // Pad to always show 3 pips
+    const pips = [...outcomes];
+    while (pips.length < 3) {
+      pips.unshift('minor');
+    }
+
+    // Only show last 3
+    const displayPips = pips.slice(-3);
+
+    let offsetX = 0;
+    displayPips.forEach((outcome) => {
+      let color: number;
+      let type: string;
+
+      if (outcome === 'prime') {
+        color = 0x00e0ff; // cyan
+        type = 'star';
+      } else if (outcome === 'miss') {
+        color = 0xff4d2e; // vermilion
+        type = 'cross';
+      } else {
+        color = 0x2a323a; // slate (dim)
+        type = 'dot';
+      }
+
+      PixelUI.drawIcon(this.graphics, type, x + offsetX, y, color);
+      offsetX += 8;
+    });
   }
 
   getContainer(): PIXI.Container {

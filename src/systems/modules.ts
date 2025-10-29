@@ -46,7 +46,6 @@ export class ModulesEngine {
   private consecutivePrimes: number = 0;
   private clearsThisStage: number = 0;
   private missesThisStage: number = 0;
-  private modulesFiredThisStage: Set<string> = new Set();
   private accumulatorStacks: number = 0;
 
   reset(): void {
@@ -54,14 +53,12 @@ export class ModulesEngine {
     this.consecutivePrimes = 0;
     this.clearsThisStage = 0;
     this.missesThisStage = 0;
-    this.modulesFiredThisStage = new Set();
     this.accumulatorStacks = 0;
   }
 
   resetStage(): void {
     this.clearsThisStage = 0;
     this.missesThisStage = 0;
-    this.modulesFiredThisStage = new Set();
     this.accumulatorStacks = 0;
   }
 
