@@ -2,6 +2,9 @@
 
 import { PieceVariant, Shape } from '@/types/game';
 
+// Re-export for convenience
+export type { PieceVariant };
+
 // Helper to create variant IDs
 function variantId(shape: Shape, badge: string, index: number = 0): string {
   return `${shape.toLowerCase()}_${badge.toLowerCase()}${index > 0 ? `_${index}` : ''}`;

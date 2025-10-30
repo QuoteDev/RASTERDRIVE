@@ -7,6 +7,7 @@ import { QueueHoldRenderer } from './render/QueueHoldRenderer';
 import { JunkRenderer } from './render/JunkRenderer';
 import { VFX } from './render/VFX';
 import { HUD } from './ui/HUD';
+import { Shop } from './ui/Shop';
 
 class Game {
   private camera: PixelCamera;
@@ -16,9 +17,11 @@ class Game {
   private junkRenderer: JunkRenderer;
   private vfx: VFX;
   private hud: HUD;
+  private shop: Shop;
 
   private lastTime: number = 0;
   private running: boolean = false;
+  private gamePaused: boolean = false;
 
   constructor() {
     // Create pixel camera with internal resolution
@@ -39,12 +42,26 @@ class Game {
     this.vfx = new VFX();
     this.hud = new HUD();
 
-    // Add to stage (VFX on top for effects)
+    // Create shop
+    this.shop = new Shop({
+      onPurchaseModule: (moduleId, price) => {
+        return this.engine.purchaseModule(moduleId, price);
+      },
+      onPurchaseVariant: (variantId, price) => {
+        return this.engine.purchaseVariant(variantId, price);
+      },
+      onContinue: () => {
+        this.closeShop();
+      },
+    });
+
+    // Add to stage (VFX and Shop on top)
     this.camera.stage.addChild(this.wellRenderer.getContainer());
     this.camera.stage.addChild(this.queueHoldRenderer.getContainer());
     this.camera.stage.addChild(this.junkRenderer.getContainer());
     this.camera.stage.addChild(this.hud.getContainer());
     this.camera.stage.addChild(this.vfx.getContainer()); // VFX on top
+    this.camera.stage.addChild(this.shop.getContainer()); // Shop above VFX
 
     // Listen to game events
     this.engine.on((event) => {
@@ -83,7 +100,23 @@ class Game {
           this.vfx.pieceLockImpact(lockX, lockY, 0x00e0ff);
         }
         break;
+
+      case 'stage_complete':
+        this.openShop();
+        break;
     }
+  }
+
+  private openShop(): void {
+    const state = this.engine.getState();
+    this.gamePaused = true;
+    this.shop.open(state.credits, state.stage, state.modules, state.ownedVariants);
+  }
+
+  private closeShop(): void {
+    this.shop.close();
+    this.gamePaused = false;
+    this.engine.continueToNextStage();
   }
 
   async init(): Promise<void> {
@@ -111,13 +144,16 @@ class Game {
     const dt = Math.min((time - this.lastTime) / 1000, 0.1); // Cap at 100ms
     this.lastTime = time;
 
-    // Update game
-    this.engine.update(dt);
+    // Only update game if not paused
+    if (!this.gamePaused) {
+      // Update game
+      this.engine.update(dt);
 
-    // Update VFX
-    this.vfx.update(dt);
+      // Update VFX
+      this.vfx.update(dt);
+    }
 
-    // Render
+    // Always render (shop still needs to render)
     this.render();
 
     // Next frame
@@ -155,6 +191,7 @@ class Game {
     this.junkRenderer.destroy();
     this.vfx.destroy();
     this.hud.destroy();
+    this.shop.destroy();
     this.camera.destroy();
   }
 }

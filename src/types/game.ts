@@ -88,7 +88,7 @@ export interface GameState {
 
   // Build
   modules: string[];
-  ownedVariants: Record<Shape, PieceVariant[]>;
+  ownedVariants: string[]; // Array of variant IDs
   sealCount: number;
 
   // Board state

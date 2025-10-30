@@ -10,6 +10,7 @@ import { ModulesEngine } from '@/systems/modules';
 import { EventCallback, GameEvent } from '@/types/events';
 import { getStarterVariants } from '@/content/variants';
 import { generateJunkDeck } from '@/content/junk';
+import { MAX_MODULE_SLOTS } from '@/content/shop';
 
 export class GameEngine {
   private well: Well;
@@ -62,7 +63,7 @@ export class GameEngine {
       lastScoringResult: null,
       credits: 0,
       modules: [],
-      ownedVariants: this.generator.getVariants() as any,
+      ownedVariants: [], // Variants purchased from shop
       sealCount: 0,
       board: this.well.getBoard(),
       currentPiece: null,
@@ -436,9 +437,7 @@ export class GameEngine {
   }
 
   private advanceStage(): void {
-    this.emit({ type: 'stage_complete' });
-
-    // Advance stage
+    // Advance stage number
     this.state.stage++;
     this.state.series++;
 
@@ -450,13 +449,10 @@ export class GameEngine {
     // Reset modules engine for new stage
     this.modulesEngine.resetStage();
 
-    // Increase target (exponential scaling)
-    const baseTarget = 5000;
-    const stageMultiplier = 1.5;
-    this.state.target = Math.floor(baseTarget * Math.pow(stageMultiplier, this.state.stage - 1));
+    // Emit stage complete (this will trigger shop UI)
+    this.emit({ type: 'stage_complete' });
 
-    // Emit stage start
-    this.emit({ type: 'stage_start', target: this.state.target });
+    // Note: Target is set in continueToNextStage() after shop closes
   }
 
   private handleMiss(): void {
@@ -512,6 +508,45 @@ export class GameEngine {
 
   private emit(event: GameEvent): void {
     this.eventCallbacks.forEach((cb) => cb(event));
+  }
+
+  // Shop methods
+  purchaseModule(moduleId: string, price: number): boolean {
+    // Validate purchase
+    if (this.state.credits < price) return false;
+    if (this.state.modules.includes(moduleId)) return false;
+    if (this.state.modules.length >= MAX_MODULE_SLOTS) return false;
+
+    // Execute purchase
+    this.state.credits -= price;
+    this.state.modules.push(moduleId);
+    return true;
+  }
+
+  purchaseVariant(variantId: string, price: number): boolean {
+    // Validate purchase
+    if (this.state.credits < price) return false;
+    if (this.state.ownedVariants.includes(variantId)) return false;
+
+    // Execute purchase
+    this.state.credits -= price;
+    this.state.ownedVariants.push(variantId);
+
+    // Add variant to piece generator
+    // Note: This requires recreating the generator with new variants
+    // For now, we'll track it in state and apply on next stage
+    return true;
+  }
+
+  continueToNextStage(): void {
+    // Called after shop closes to actually start the next stage
+    // Increase target (exponential scaling)
+    const baseTarget = 5000;
+    const stageMultiplier = 1.5;
+    this.state.target = Math.floor(baseTarget * Math.pow(stageMultiplier, this.state.stage - 1));
+
+    // Emit stage start
+    this.emit({ type: 'stage_start', target: this.state.target });
   }
 
   destroy(): void {

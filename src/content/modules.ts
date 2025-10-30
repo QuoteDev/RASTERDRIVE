@@ -2,6 +2,8 @@
 
 import { ModuleDef } from '@/types/game';
 
+export type Module = ModuleDef;
+
 export const MODULES: ModuleDef[] = [
   // BASE+ Modules
   {
