@@ -203,4 +203,17 @@ export class Well {
 
     return counts;
   }
+
+  // Add junk cell (gray, no badge)
+  addJunkCell(x: number, y: number): void {
+    if (x < 0 || x >= this.board.width || y < 0 || y >= this.board.height) {
+      return;
+    }
+
+    this.board.cells[y][x] = {
+      filled: true,
+      color: '#666666', // Gray junk color
+      badge: 'None',
+    };
+  }
 }

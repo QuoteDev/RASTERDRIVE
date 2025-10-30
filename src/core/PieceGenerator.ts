@@ -11,14 +11,25 @@ export class PieceGenerator {
   private droughtCounters: Map<Shape, number>;
   private history: Shape[];
 
-  constructor(seed: number) {
+  constructor(seed: number, initialVariants?: PieceVariant[]) {
     this.rng = new PRNG(seed);
     this.variants = new Map();
     this.droughtCounters = new Map();
     this.history = [];
 
-    // Initialize with basic pieces
-    this.initializeBasicPieces();
+    // Initialize drought counters
+    const shapes: Shape[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+    shapes.forEach((shape) => {
+      this.droughtCounters.set(shape, 0);
+    });
+
+    // Add initial variants if provided
+    if (initialVariants) {
+      initialVariants.forEach((variant) => this.addVariant(variant));
+    } else {
+      // Fallback to basic pieces
+      this.initializeBasicPieces();
+    }
   }
 
   private initializeBasicPieces(): void {
@@ -32,7 +43,6 @@ export class PieceGenerator {
           weight: 1,
         },
       ]);
-      this.droughtCounters.set(shape, 0);
     });
   }
 

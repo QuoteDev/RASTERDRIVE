@@ -6,7 +6,10 @@ import { PieceGenerator } from './PieceGenerator';
 import { Input } from './Input';
 import { getKickTable, SHAPE_COLORS } from './SRS';
 import { ScoringSystem, RevTracker, EchoQueue } from '@/systems/scoring';
+import { ModulesEngine } from '@/systems/modules';
 import { EventCallback, GameEvent } from '@/types/events';
+import { getStarterVariants } from '@/content/variants';
+import { generateJunkDeck } from '@/content/junk';
 
 export class GameEngine {
   private well: Well;
@@ -15,6 +18,7 @@ export class GameEngine {
   private scoring: ScoringSystem;
   private revTracker: RevTracker;
   private echoQueue: EchoQueue;
+  private modulesEngine: ModulesEngine;
 
   private state: GameState;
   private eventCallbacks: EventCallback[] = [];
@@ -32,17 +36,21 @@ export class GameEngine {
 
   constructor(seed: number) {
     this.well = new Well(10, 20);
-    this.generator = new PieceGenerator(seed);
+    this.generator = new PieceGenerator(seed, getStarterVariants());
     this.input = new Input();
     this.scoring = new ScoringSystem();
     this.revTracker = new RevTracker();
     this.echoQueue = new EchoQueue();
+    this.modulesEngine = new ModulesEngine();
 
     this.state = this.createInitialState(seed);
     this.spawnPiece();
   }
 
   private createInitialState(seed: number): GameState {
+    const junkDeck = generateJunkDeck(seed, 5);
+    const junkForecast = junkDeck.slice(0, 3); // Show first 3 cards
+
     return {
       stage: 1,
       series: 1,
@@ -61,9 +69,9 @@ export class GameEngine {
       queue: [],
       held: null,
       canSwapHold: true,
-      junkDeck: [],
-      junkForecast: [],
-      junkTimer: 0,
+      junkDeck,
+      junkForecast,
+      junkTimer: 9.0, // Start at max
       junkTimerMax: 9.0,
       contracts: [],
       currentShowcase: null,
@@ -80,6 +88,7 @@ export class GameEngine {
     this.handleInput();
     this.updateGravity(dt);
     this.updateLockDelay(dt);
+    this.updateJunkTimer(dt);
   }
 
   private handleInput(): void {
@@ -252,6 +261,35 @@ export class GameEngine {
     }
   }
 
+  private updateJunkTimer(dt: number): void {
+    if (this.state.junkDeck.length === 0) return;
+
+    this.state.junkTimer -= dt;
+    if (this.state.junkTimer <= 0) {
+      this.spawnJunk();
+      this.state.junkTimer = this.state.junkTimerMax; // Reset timer
+    }
+  }
+
+  private spawnJunk(): void {
+    if (this.state.junkDeck.length === 0) return;
+
+    const card = this.state.junkDeck.shift()!;
+    this.state.junkForecast = this.state.junkDeck.slice(0, 3); // Update forecast
+
+    // Spawn pattern at bottom of well
+    const pattern = card.pattern;
+    for (let y = 0; y < pattern.length; y++) {
+      for (let x = 0; x < pattern[y].length; x++) {
+        if (pattern[y][x] === 1) {
+          this.well.addJunkCell(x, y);
+        }
+      }
+    }
+
+    this.emit({ type: 'junk_spawn', cardId: card.id });
+  }
+
   private lockPiece(): void {
     if (!this.state.currentPiece) return;
 
@@ -310,9 +348,39 @@ export class GameEngine {
       this.echoQueue.add(contribution);
     }
 
+    // Apply module effects (before clearing lines to check perfect clear)
+    const moduleContext = {
+      linesCleared,
+      cells,
+      isPerfectClear: false, // Will check after clearing
+      stackHeight: this.well.getStackHeight(),
+      modules: this.state.modules,
+      modulesFiredThisStage: new Set<string>(),
+      lastClearLines: 0, // TODO: Track this
+      consecutivePrimes: 0, // TODO: Track this
+      clearsThisStage: 0, // TODO: Track this
+      isFirstClear: this.state.piecesPlaced <= 1,
+      baseScore: result.base,
+      currentRev: this.revTracker.getRev(),
+      credits: this.state.credits,
+      sealCount: this.state.sealCount,
+      missesThisStage: 0, // TODO: Track this
+    };
+
+    const moduleEffects = this.modulesEngine.applyModules(moduleContext);
+
+    // Apply module effects to result
+    let totalDelta = result.delta;
+    let totalCredits = result.creditsGained;
+    moduleEffects.forEach((effect) => {
+      if (effect.baseAdd) totalDelta += effect.baseAdd;
+      if (effect.creditsAdd) totalCredits += effect.creditsAdd;
+      // Note: revAdd and ampMultiply would need deeper integration
+    });
+
     // Update state
-    this.state.total += result.delta;
-    this.state.credits += result.creditsGained;
+    this.state.total += totalDelta;
+    this.state.credits += totalCredits;
     this.state.locksSinceLastClear = 0;
     this.state.echoQueue = this.echoQueue.peek(); // Sync to state
     this.state.lastScoringResult = result; // Save for HUD display
@@ -331,9 +399,18 @@ export class GameEngine {
     const isPrime = this.scoring.isPrime(linesCleared, isPerfectClear);
     if (isPrime) {
       this.revTracker.onPrime();
+      this.modulesEngine.onPrime();
       this.addOutcome('prime');
       this.emit({ type: 'prime_clear' });
+
+      // Delete top junk card on Prime clears
+      if (this.state.junkDeck.length > 0) {
+        this.state.junkDeck.shift(); // Remove first card
+        this.state.junkForecast = this.state.junkDeck.slice(0, 3); // Update forecast
+        this.emit({ type: 'junk_deleted' });
+      }
     } else {
+      this.modulesEngine.onNonPrime();
       this.addOutcome('minor');
     }
     this.state.rev = this.revTracker.getRev();
@@ -351,10 +428,40 @@ export class GameEngine {
         credits: result.creditsGained,
       });
     }
+
+    // Check for stage completion
+    if (this.state.total >= this.state.target) {
+      this.advanceStage();
+    }
+  }
+
+  private advanceStage(): void {
+    this.emit({ type: 'stage_complete' });
+
+    // Advance stage
+    this.state.stage++;
+    this.state.series++;
+
+    // Reset Rev to 1.0
+    this.revTracker = new RevTracker();
+    this.state.rev = 1.0;
+    this.state.lastOutcomes = [];
+
+    // Reset modules engine for new stage
+    this.modulesEngine.resetStage();
+
+    // Increase target (exponential scaling)
+    const baseTarget = 5000;
+    const stageMultiplier = 1.5;
+    this.state.target = Math.floor(baseTarget * Math.pow(stageMultiplier, this.state.stage - 1));
+
+    // Emit stage start
+    this.emit({ type: 'stage_start', target: this.state.target });
   }
 
   private handleMiss(): void {
     this.revTracker.onMiss();
+    this.modulesEngine.onMiss();
     this.state.rev = this.revTracker.getRev();
     this.addOutcome('miss');
     this.state.locksSinceLastClear = 0;

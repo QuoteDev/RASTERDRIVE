@@ -4,6 +4,8 @@ import { PixelCamera } from './render/PixelCamera';
 import { GameEngine } from './core/GameEngine';
 import { WellRenderer } from './render/WellRenderer';
 import { QueueHoldRenderer } from './render/QueueHoldRenderer';
+import { JunkRenderer } from './render/JunkRenderer';
+import { VFX } from './render/VFX';
 import { HUD } from './ui/HUD';
 
 class Game {
@@ -11,6 +13,8 @@ class Game {
   private engine: GameEngine;
   private wellRenderer: WellRenderer;
   private queueHoldRenderer: QueueHoldRenderer;
+  private junkRenderer: JunkRenderer;
+  private vfx: VFX;
   private hud: HUD;
 
   private lastTime: number = 0;
@@ -31,17 +35,55 @@ class Game {
     // Create renderers
     this.wellRenderer = new WellRenderer(10, 20);
     this.queueHoldRenderer = new QueueHoldRenderer();
+    this.junkRenderer = new JunkRenderer();
+    this.vfx = new VFX();
     this.hud = new HUD();
 
-    // Add to stage
+    // Add to stage (VFX on top for effects)
     this.camera.stage.addChild(this.wellRenderer.getContainer());
     this.camera.stage.addChild(this.queueHoldRenderer.getContainer());
+    this.camera.stage.addChild(this.junkRenderer.getContainer());
     this.camera.stage.addChild(this.hud.getContainer());
+    this.camera.stage.addChild(this.vfx.getContainer()); // VFX on top
 
     // Listen to game events
     this.engine.on((event) => {
       console.log('Game event:', event);
+      this.handleGameEvent(event);
     });
+  }
+
+  private handleGameEvent(event: any): void {
+    const wellX = 100;
+    const wellY = 20;
+
+    switch (event.type) {
+      case 'line_clear':
+        // Get line positions from game state
+        const lines = this.engine.getWell().getFilledLines();
+        if (lines.length > 0) {
+          this.vfx.lineClearFlash(lines, wellX, wellY);
+        }
+        break;
+
+      case 'prime_clear':
+        this.vfx.primeClearEffect(wellX, wellY);
+        break;
+
+      case 'perfect_clear':
+        this.vfx.perfectClearEffect(wellX, wellY);
+        break;
+
+      case 'piece_lock':
+        // Lock effect at piece position
+        const currentPiece = this.engine.getState().currentPiece;
+        if (currentPiece) {
+          const lockX = wellX + currentPiece.x * 8;
+          const lockY = wellY + currentPiece.y * 8;
+          this.vfx.pieceLockImpact(lockX, lockY, 0x00e0ff);
+        }
+        break;
+    }
   }
 
   async init(): Promise<void> {
@@ -72,6 +114,9 @@ class Game {
     // Update game
     this.engine.update(dt);
 
+    // Update VFX
+    this.vfx.update(dt);
+
     // Render
     this.render();
 
@@ -88,6 +133,13 @@ class Game {
     // Render queue and hold
     this.queueHoldRenderer.render(state.queue, state.held);
 
+    // Render junk forecast
+    this.junkRenderer.render(
+      state.junkForecast,
+      state.junkTimer,
+      state.junkTimerMax
+    );
+
     // Update HUD
     this.hud.update(state);
 
@@ -100,6 +152,8 @@ class Game {
     this.engine.destroy();
     this.wellRenderer.destroy();
     this.queueHoldRenderer.destroy();
+    this.junkRenderer.destroy();
+    this.vfx.destroy();
     this.hud.destroy();
     this.camera.destroy();
   }
