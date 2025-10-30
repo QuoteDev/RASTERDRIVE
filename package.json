@@ -1,0 +1,23 @@
+{
+  "name": "rasterdrive",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "RASTERDRIVE - A Tetris-inspired roguelike score-chaser",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "dependencies": {
+    "pixi.js": "^7.4.2",
+    "howler": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.11",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "vitest": "^1.2.0"
+  }
+}
